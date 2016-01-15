@@ -29,11 +29,35 @@
   </div>
 <% end %>
 
+<% if @check.respond_to?(:notify_on_error) %>
+  <div class="form-group">
+    <%= f.label "Notify on error" %>
+    <div class="hide">
+      <%= f.select :notify_on_error, [["Yes", true], ["No", false]], {}, {id: "select-notify-on-error"} %>
+    </div>
+    <script>
+      $("#select-notify-on-error").selectize({}).parent().removeClass("hide");
+    </script>
+  </div>
+<% end %>
+
+<% if @check.respond_to?(:notify_on_pass) %>
+  <div class="form-group">
+    <%= f.label "Notify on pass after failure" %>
+    <div class="hide">
+      <%= f.select :notify_on_pass, [["Yes", true], ["No", false]], {}, {id: "select-notify-on-pass"} %>
+    </div>
+    <script>
+      $("#select-notify-on-pass").selectize({}).parent().removeClass("hide");
+    </script>
+  </div>
+<% end %>
+
   <div class="form-group">
     <%= f.label :emails %>
     <%= f.text_field :emails, placeholder: "Optional, comma separated", class: "form-control" %>
   </div>
-  <p class="text-muted">Emails are sent when a check starts failing, and when it starts passing again.
+  <p class="text-muted">Emails are sent when a check starts failing. Optionally, emails are sent when it starts passing again.
   <p>
     <% if @check.persisted? %>
       <%= link_to "Delete", check_path(@check), method: :delete, "data-confirm" => "Are you sure?", class: "btn btn-danger" %>
