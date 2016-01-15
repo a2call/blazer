@@ -31,6 +31,8 @@ class <%= migration_class_name %> < ActiveRecord::Migration
 
     create_table :blazer_checks do |t|
       t.references :query
+      t.boolean :notify_on_error, default: true
+      t.boolean :notify_on_pass, default: true
       t.string :state
       t.text :emails
       t.timestamps
