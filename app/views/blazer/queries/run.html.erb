@@ -28,7 +28,7 @@
     <% chart_id = SecureRandom.hex %>
     <% column_types = blazer_column_types(@columns, @rows, @boom) %>
     <% chart_options = {id: chart_id, min: nil} %>
-    <% if (target_index = @columns.keys.map(&:downcase).index("target")) %>
+    <% if (target_index = @columns.map { |c| c[:name] }.map(&:downcase).index("target")) %>
       <% chart_options[:library] = {series: {(target_index - 1) => {pointSize: 0, lineWidth: 3, color: "#109618"}}} %>
     <% end %>
     <% if blazer_maps? && @markers.any? %>
