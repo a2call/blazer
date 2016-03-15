@@ -97,7 +97,7 @@
                   <% v = row[column[:name]] %>
                   <td>
                     <% if v.is_a?(Time) %>
-                      <% v = Blazer.convert_time_zone.call(k, v) %>
+                      <% v = blazer_time_value(k, v) %>
                     <% end %>
 
                     <% unless v.nil? %>

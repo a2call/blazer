@@ -40,6 +40,10 @@ module Blazer
       settings["cache"]
     end
 
+    def local_time_suffix
+      @local_time_suffix ||= Array(settings["local_time_suffix"])
+    end
+
     def use_transaction?
       settings.key?("use_transaction") ? settings["use_transaction"] : true
     end
@@ -104,7 +108,7 @@ module Blazer
             end
           rescue ActiveRecord::StatementInvalid => e
             error = e.message.sub(/.+ERROR: /, "")
-            error = Blazer::TIMEOUT_MESSAGE if error.include?("canceling statement due to statement timeout") || error.include?("cancelled on user's request")
+            error = Blazer::TIMEOUT_MESSAGE if error.include?("canceling statement due to statement timeout") || error.include?("cancelled on user's request") || error.include?("system requested abort query")
           end
         end
 
