@@ -19,6 +19,8 @@ module Blazer
           invert ? "failing" : "passing"
         end
 
+      self.last_run_at = Time.now if self.respond_to?(:last_run_at=)
+
       if notify?
         Blazer::CheckMailer.state_change(self, state, state_was, rows.size, error).deliver_later
       end

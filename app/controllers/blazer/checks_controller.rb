@@ -41,7 +41,7 @@ module Blazer
     private
 
     def check_params
-      params.require(:check).permit(:query_id, :emails, :invert, :notify_on_error, :notify_on_pass)
+      params.require(:check).permit(:query_id, :emails, :invert, :schedule, :notify_on_error, :notify_on_pass)
     end
 
     def set_check

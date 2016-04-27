@@ -34,7 +34,10 @@ class <%= migration_class_name %> < ActiveRecord::Migration
       t.boolean :notify_on_error, default: true
       t.boolean :notify_on_pass, default: true
       t.string :state
+      t.string :schedule
       t.text :emails
+      t.boolean :invert
+      t.timestamp :last_run_at
       t.timestamps
     end
   end
