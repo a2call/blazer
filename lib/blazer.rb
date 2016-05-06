@@ -64,6 +64,7 @@ module Blazer
     checks.find_each do |check|
       rows = nil
       error = nil
+      tries = 1
       ActiveSupport::Notifications.instrument("run_check.blazer", check_id: check.id, query_id: check.query.id, state_was: check.state) do |instrument|
         # try 3 times on timeout errors
         while tries <= 3
