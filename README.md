@@ -65,10 +65,20 @@ Be sure to set a host in `config/environments/production.rb` for emails to work.
 config.action_mailer.default_url_options = {host: "blazerme.herokuapp.com"}
 ```
 
-Schedule checks to run every hour (with cron, [Heroku Scheduler](https://elements.heroku.com/addons/scheduler), etc).
+Schedule checks to run (with cron, [Heroku Scheduler](https://elements.heroku.com/addons/scheduler), etc). The default options are every 5 minutes, 1 hour, or 1 day, which you can customize. For each of these options, set up a task to run.
 
 ```sh
-rake blazer:run_checks
+rake blazer:run_checks SCHEDULE="5 minutes"
+rake blazer:run_checks SCHEDULE="1 hour"
+rake blazer:run_checks SCHEDULE="1 day"
+```
+
+Here’s what it looks like with cron.
+
+```
+*/5 * * * * * rake blazer:run_checks SCHEDULE="5 minutes"
+0   * * * * * rake blazer:run_checks SCHEDULE="1 hour"
+0   0 * * * * rake blazer:run_checks SCHEDULE="1 day"
 ```
 
 You can also set up failing checks to be sent once a day (or whatever you prefer).
@@ -309,6 +319,27 @@ Have team members who want to learn SQL? Here are a few great, free resources.
 For an easy way to group by day, week, month, and more with correct time zones, check out [Groupdate](https://github.com/ankane/groupdate.sql).
 
 ## Upgrading
+
+### 1.3
+
+To take advantage of the latest features, create a migration
+
+```sh
+rails g migration upgrade_blazer_to_1_3
+```
+
+with:
+
+```ruby
+add_column :blazer_dashboards, :creator_id, :integer
+add_column :blazer_checks, :creator_id, :integer
+add_column :blazer_checks, :invert, :boolean
+add_column :blazer_checks, :schedule, :string
+add_column :blazer_checks, :last_run_at, :timestamp
+commit_db_transaction
+
+Blazer::Check.update_all schedule: "1 hour"
+```
 
 ### 1.0
 

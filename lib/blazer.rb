@@ -6,6 +6,8 @@ require "blazer/data_source"
 require "blazer/engine"
 
 module Blazer
+  class TimeoutNotSupported < StandardError; end
+
   class << self
     attr_accessor :audit
     attr_reader :time_zone
@@ -20,9 +22,14 @@ module Blazer
   end
   self.audit = true
   self.user_name = :name
-  self.check_schedules = ["1 day", "1 hour", "5 minutes"]
+  self.check_schedules = ["5 minutes", "1 hour", "1 day"]
 
   TIMEOUT_MESSAGE = "Query timed out :("
+  TIMEOUT_ERRORS = [
+    "canceling statement due to statement timeout", # postgres
+    "cancelled on user's request", # redshift
+    "system requested abort" # redshift
+  ]
 
   def self.time_zone=(time_zone)
     @time_zone = time_zone.is_a?(ActiveSupport::TimeZone) ? time_zone : ActiveSupport::TimeZone[time_zone.to_s]
@@ -57,21 +64,27 @@ module Blazer
     checks.find_each do |check|
       rows = nil
       error = nil
-      tries = 0
-      # try 3 times on timeout errors
-      while tries < 3
-        columns, rows, error, cached_at = data_sources[check.query.data_source].run_statement(check.query.statement, refresh_cache: true)
-        if error == Blazer::TIMEOUT_MESSAGE
-          Rails.logger.info "[blazer timeout] query=#{check.query.name}"
-          tries += 1
-          sleep(10)
-        else
-          break
+      ActiveSupport::Notifications.instrument("run_check.blazer", check_id: check.id, query_id: check.query.id, state_was: check.state) do |instrument|
+        # try 3 times on timeout errors
+        while tries <= 3
+          columns, rows, error, cached_at = data_sources[check.query.data_source].run_statement(check.query.statement, refresh_cache: true)
+          if error == Blazer::TIMEOUT_MESSAGE
+            Rails.logger.info "[blazer timeout] query=#{check.query.name}"
+            tries += 1
+            sleep(10)
+          else
+            break
+          end
         end
+        check.update_state(rows, error)
+        # TODO use proper logfmt
+        Rails.logger.info "[blazer check] query=#{check.query.name} state=#{check.state} rows=#{rows.try(:size)} error=#{error}"
+
+        instrument[:state] = check.state
+        instrument[:rows] = rows.try(:size)
+        instrument[:error] = error
+        instrument[:tries] = tries
       end
-      check.update_state(rows, error)
-      # TODO use proper logfmt
-      Rails.logger.info "[blazer check] query=#{check.query.name} state=#{check.state} rows=#{rows.try(:size)} error=#{error}"
     end
   end
 

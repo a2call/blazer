@@ -85,6 +85,8 @@ module Blazer
                 connection_model.connection.execute("SET statement_timeout = #{timeout.to_i * 1000}")
               elsif mysql?
                 connection_model.connection.execute("SET max_execution_time = #{timeout.to_i * 1000}")
+              else
+                raise Blazer::TimeoutNotSupported, "Timeout not supported for #{adapter_name} adapter"
               end
             end
 
@@ -119,7 +121,7 @@ module Blazer
             end
           rescue ActiveRecord::StatementInvalid => e
             error = e.message.sub(/.+ERROR: /, "")
-            error = Blazer::TIMEOUT_MESSAGE if error.include?("canceling statement due to statement timeout") || error.include?("cancelled on user's request") || error.include?("system requested abort")
+            error = Blazer::TIMEOUT_MESSAGE if Blazer::TIMEOUT_ERRORS.any? { |e| error.include?(e) }
           end
         end
 
@@ -168,11 +170,8 @@ module Blazer
     def in_transaction
       if use_transaction?
         connection_model.transaction do
-          begin
-            yield
-          ensure
-            raise ActiveRecord::Rollback
-          end
+          yield
+          raise ActiveRecord::Rollback
         end
       else
         yield

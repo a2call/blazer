@@ -1,9 +1,11 @@
-## 1.3.0 [unreleased]
+## 1.3.0
 
 - Added schedule for checks
 - Switched to Chart.js for charts
 - Better output for explain
 - Support for MySQL timeouts
+- Raise error when timeout not supported
+- Added creator to dashboards and checks
 
 ## 1.2.1
 

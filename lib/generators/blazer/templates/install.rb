@@ -18,6 +18,7 @@ class <%= migration_class_name %> < ActiveRecord::Migration
     end
 
     create_table :blazer_dashboards do |t|
+      t.refrences :creator
       t.text :name
       t.timestamps
     end
@@ -30,6 +31,7 @@ class <%= migration_class_name %> < ActiveRecord::Migration
     end
 
     create_table :blazer_checks do |t|
+      t.references :creator
       t.references :query
       t.boolean :notify_on_error, default: true
       t.boolean :notify_on_pass, default: true
