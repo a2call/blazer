@@ -33,7 +33,13 @@ module Blazer
       if @success
         @bind_vars.each do |var|
           value = params[var].presence
-          value = value.to_i if value.to_i.to_s == value
+          if value
+            if value =~ /\A\d+\z/
+              value = value.to_i
+            elsif value =~ /\A\d+\.\d+\z/
+              value = value.to_f
+            end
+          end
           if var.end_with?("_at")
             value = Blazer.time_zone.parse(value) rescue nil
           end
@@ -51,7 +57,7 @@ module Blazer
     helper_method :extract_vars
 
     def variable_params
-      params.except(:controller, :action, :id, :host, :query, :dashboard, :query_id, :query_ids, :table_names, :authenticity_token, :utf8, :_method, :commit, :statement, :data_source, :name, :fork_query_id)
+      params.except(:controller, :action, :id, :host, :query, :dashboard, :query_id, :query_ids, :table_names, :authenticity_token, :utf8, :_method, :commit, :statement, :data_source, :name, :fork_query_id).permit!
     end
     helper_method :variable_params
 

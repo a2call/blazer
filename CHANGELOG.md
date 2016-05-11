@@ -1,3 +1,20 @@
+## 1.3.4
+
+- Fixed issue with missing queries
+
+## 1.3.3
+
+- Fixed error with Rails 4.1 and below
+
+## 1.3.2
+
+- Added support for Rails 5
+- Attempt to reconnect for checks
+
+## 1.3.1
+
+- Fixed migration error
+
 ## 1.3.0
 
 - Added schedule for checks

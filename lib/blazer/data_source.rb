@@ -111,11 +111,12 @@ module Blazer
 
             columns = column_hash.values.sort_by { |column| column[:col_number] }
 
+            cast_method = Rails::VERSION::MAJOR < 5 ? :type_cast : :cast_value
             result.rows.each do |untyped_row|
               row = {}
               columns.each do |column|
                 value = untyped_row[column[:col_number]]
-                row[column[:name]] = result.column_types.empty? ? value : result.column_types[column[:orig_name]].send(:type_cast, value)
+                row[column[:name]] = result.column_types.empty? ? value : result.column_types[column[:orig_name]].send(cast_method, value)
               end
               rows << row
             end
@@ -159,6 +160,10 @@ module Blazer
 
     def mysql?
       ["MySQL", "Mysql2", "Mysql2Spatial"].include?(adapter_name)
+    end
+
+    def reconnect
+      connection_model.establish_connection(settings["url"])
     end
 
     protected

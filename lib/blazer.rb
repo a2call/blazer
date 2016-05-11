@@ -30,6 +30,8 @@ module Blazer
     "cancelled on user's request", # redshift
     "system requested abort" # redshift
   ]
+  BELONGS_TO_OPTIONAL = {}
+  BELONGS_TO_OPTIONAL[:optional] = true if Rails::VERSION::MAJOR >= 5
 
   def self.time_zone=(time_zone)
     @time_zone = time_zone.is_a?(ActiveSupport::TimeZone) ? time_zone : ActiveSupport::TimeZone[time_zone.to_s]
@@ -71,6 +73,11 @@ module Blazer
           columns, rows, error, cached_at = data_sources[check.query.data_source].run_statement(check.query.statement, refresh_cache: true)
           if error == Blazer::TIMEOUT_MESSAGE
             Rails.logger.info "[blazer timeout] query=#{check.query.name}"
+            tries += 1
+            sleep(10)
+          elsif error.start_with?("PG::ConnectionBad")
+            data_sources[check.query.data_source].reconnect
+            Rails.logger.info "[blazer reconnect] query=#{check.query.name}"
             tries += 1
             sleep(10)
           else
