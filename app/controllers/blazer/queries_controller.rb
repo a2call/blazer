@@ -87,7 +87,7 @@ module Blazer
 
         @columns, @rows, @error, @cached_at = @data_source.run_statement(@statement, user: blazer_user, query: @query, refresh_cache: params[:check])
 
-        if @query && @error != Blazer::TIMEOUT_MESSAGE
+        if @query && @error != Blazer::TIMEOUT_MESSAGE && !@error.to_s.include?("permission denied for relation")
           @query.checks.each do |check|
             check.update_state(@rows, @error)
           end
