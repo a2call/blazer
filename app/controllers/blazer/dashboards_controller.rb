@@ -38,7 +38,7 @@ module Blazer
           query = data_source.smart_variables[var]
           if query
             columns, rows, error, cached_at = data_source.run_statement(query)
-            ((@smart_vars[var] ||= []).concat(rows.map { |v| v.values.reverse })).uniq!
+            ((@smart_vars[var] ||= []).concat(rows.map { |v| v.reverse })).uniq!
             @sql_errors << error if error
           end
         end
