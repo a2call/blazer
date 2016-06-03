@@ -103,7 +103,7 @@ module Blazer
     end
 
     def cache_key(statement)
-      ["blazer", "v3", id, Digest::MD5.hexdigest(statement)].join("/")
+      ["blazer", "v3.1", id, Digest::MD5.hexdigest(statement)].join("/")
     end
 
     def schemas
