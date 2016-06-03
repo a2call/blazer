@@ -102,19 +102,19 @@
                     <% k = @columns[i] %>
                     <td>
                       <% if v.is_a?(Time) %>
-                        <% v = blazer_time_value(column[:orig_name], v) %>
+                        <% v = blazer_time_value(k, v) %>
                       <% end %>
 
                       <% unless v.nil? %>
                         <% if v.is_a?(String) && v == "" %>
                           <div class="text-muted">empty string</div>
-                        <% elsif @linked_columns[column[:orig_name]] %>
-                          <%= link_to blazer_format_value(column[:orig_name], v), @linked_columns[column[:orig_name]].gsub("{value}", u(v.to_s)), target: "_blank" %>
+                        <% elsif @linked_columns[k] %>
+                          <%= link_to blazer_format_value(k, v), @linked_columns[k].gsub("{value}", u(v.to_s)), target: "_blank" %>
                         <% else %>
-                          <%= blazer_format_value(column[:orig_name], v) %>
+                          <%= blazer_format_value(k, v) %>
                         <% end %>
 
-                        <% if v2 = (@boom[column[:name]] || {})[v.to_s] %>
+                        <% if v2 = (@boom[k] || {})[v.to_s] %>
                           <div class="text-muted"><%= v2 %></div>
                         <% end %>
                       <% end %>
