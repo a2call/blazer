@@ -33,7 +33,7 @@
 
 <div style="margin-bottom: 60px;"></div>
 
-<% if @data_sources.any? { |ds| ds.cache } %>
+<% if @data_sources.any? { |ds| ds.cache_mode != "off" } %>
   <p class="text-muted" style="float: right;">
     Some queries are cached
     <%= link_to "Refresh", refresh_dashboard_path(@dashboard, variable_params), method: :post %>
@@ -144,16 +144,12 @@
     </div>
   </div>
   <script>
-    var request = $.ajax({
-      url: "<%= run_queries_path %>",
-      method: "POST",
-      data: <%= blazer_json_escape({statement: query.statement, query_id: query.id, only_chart: true}.to_json).html_safe %>,
-      dataType: "html"
-    }).done(function(data) {
+    var data = <%= blazer_json_escape({statement: query.statement, query_id: query.id, only_chart: true}.to_json).html_safe %>;
+
+    runQuery(data, function (data) {
       $("#chart-<%= i %>").html(data);
       $("#chart-<%= i %> table").stupidtable();
-    }).fail(function(jqXHR, textStatus, errorThrown) {
-      var message = (typeof errorThrown === "string") ? errorThrown : errorThrown.message;
+    }, function (message) {
       $("#chart-<%= i %>").css("color", "red").html(message);
     });
   </script>

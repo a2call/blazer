@@ -46,7 +46,32 @@ module Blazer
     end
 
     def cache
-      settings["cache"]
+      @cache ||= begin
+        if settings["cache"].is_a?(Hash)
+          settings["cache"]
+        elsif settings["cache"]
+          {
+            "mode" => "all",
+            "expires_in" => settings["cache"]
+          }
+        else
+          {
+            "mode" => "off"
+          }
+        end
+      end
+    end
+
+    def cache_mode
+      cache["mode"]
+    end
+
+    def cache_expires_in
+      (cache["expires_in"] || 60).to_f
+    end
+
+    def cache_slow_threshold
+      (cache["slow_threshold"] || 15).to_f
     end
 
     def local_time_suffix
@@ -69,15 +94,66 @@ module Blazer
       end
     end
 
+    def run_main_statement(statement, options = {})
+      query = options[:query]
+      Blazer.transform_statement.call(self, statement) if Blazer.transform_statement
+
+      # audit
+      if Blazer.audit
+        audit = Blazer::Audit.new(statement: statement)
+        audit.query = query
+        audit.data_source = id
+        audit.user = options[:user]
+        audit.save!
+      end
+
+      start_time = Time.now
+      columns, rows, error, cached_at, just_cached = run_statement(statement, options.merge(with_just_cached: true))
+      duration = Time.now - start_time
+
+      if Blazer.audit
+        audit.duration = duration if audit.respond_to?(:duration=)
+        audit.error = error if audit.respond_to?(:error=)
+        audit.timed_out = error == Blazer::TIMEOUT_MESSAGE if audit.respond_to?(:timed_out=)
+        audit.cached = cached_at.present? if audit.respond_to?(:cached=)
+        if !cached_at && duration >= 10
+          audit.cost = cost(statement) if audit.respond_to?(:cost=)
+        end
+        audit.save! if audit.changed?
+      end
+
+      if query && error != Blazer::TIMEOUT_MESSAGE && !error.to_s.include?("permission denied for relation")
+        query.checks.each do |check|
+          check.update_state(rows, error)
+        end
+      end
+
+      [columns, rows, error, cached_at, just_cached]
+    end
+
+    def read_cache(cache_key)
+      value = Blazer.cache.read(cache_key)
+      Marshal.load(value) if value
+    end
+
+    def run_results(run_id)
+      read_cache(run_cache_key(run_id))
+    end
+
+    def delete_results(run_id)
+      Blazer.cache.delete(run_cache_key(run_id))
+    end
+
     def run_statement(statement, options = {})
       columns = nil
       rows = nil
       error = nil
       cached_at = nil
-      cache_key = self.cache_key(statement) if cache
+      just_cached = false
+      run_id = options[:run_id]
+      cache_key = statement_cache_key(statement)
       if cache && !options[:refresh_cache]
-        value = Blazer.cache.read(cache_key)
-        columns, rows, cached_at = Marshal.load(value) if value
+        columns, rows, error, cached_at = read_cache(cache_key)
       end
 
       unless rows
@@ -92,18 +168,28 @@ module Blazer
         if options[:query].respond_to?(:id)
           comment << ",query_id:#{options[:query].id}"
         end
-        columns, rows, error = run_statement_helper(statement, comment)
+        columns, rows, error, just_cached = run_statement_helper(statement, comment, options[:run_id])
       end
 
-      [columns, rows, error, cached_at]
+      output = [columns, rows, error, cached_at]
+      output << just_cached if options[:with_just_cached]
+      output
     end
 
     def clear_cache(statement)
-      Blazer.cache.delete(cache_key(statement))
+      Blazer.cache.delete(statement_cache_key(statement))
     end
 
-    def cache_key(statement)
-      ["blazer", "v3.1", id, Digest::MD5.hexdigest(statement)].join("/")
+    def cache_key(key)
+      (["blazer", "v4"] + key).join("/")
+    end
+
+    def statement_cache_key(statement)
+      cache_key(["statement", id, Digest::MD5.hexdigest(statement)])
+    end
+
+    def run_cache_key(run_id)
+      cache_key(["run", run_id])
     end
 
     def schemas
@@ -113,7 +199,7 @@ module Blazer
 
     def tables
       columns, rows, error, cached_at = run_statement(connection_model.send(:sanitize_sql_array, ["SELECT table_name, column_name, ordinal_position, data_type FROM information_schema.columns WHERE table_schema IN (?)", schemas]))
-      rows.map(&:first).uniq
+      rows.map(&:first).uniq.sort
     end
 
     def postgresql?
@@ -134,10 +220,11 @@ module Blazer
 
     protected
 
-    def run_statement_helper(statement, comment)
+    def run_statement_helper(statement, comment, run_id)
       columns = []
       rows = []
       error = nil
+      start_time = Time.now
 
       in_transaction do
         begin
@@ -155,7 +242,7 @@ module Blazer
           columns = result.columns
           cast_method = Rails::VERSION::MAJOR < 5 ? :type_cast : :cast_value
           result.rows.each do |untyped_row|
-            rows << (result.column_types.empty? ? untyped_row : columns.each_with_index.map { |c, i| result.column_types[c].send(cast_method, untyped_row[i]) })
+            rows << (result.column_types.empty? ? untyped_row : columns.each_with_index.map { |c, i| untyped_row[i] ? result.column_types[c].send(cast_method, untyped_row[i]) : nil })
           end
         rescue ActiveRecord::StatementInvalid => e
           error = e.message.sub(/.+ERROR: /, "")
@@ -163,9 +250,18 @@ module Blazer
         end
       end
 
-      Blazer.cache.write(cache_key(statement), Marshal.dump([columns, rows, Time.now]), expires_in: cache.to_f * 60) if !error && cache
+      duration = Time.now - start_time
+      just_cached = false
+      if !error && (cache_mode == "all" || (cache_mode == "slow" && duration >= cache_slow_threshold))
+        Blazer.cache.write(statement_cache_key(statement), Marshal.dump([columns, rows, error, Time.now]), expires_in: cache_expires_in.to_f * 60)
+        just_cached = true
+      end
 
-      [columns, rows, error]
+      if run_id
+        Blazer.cache.write(run_cache_key(run_id), Marshal.dump([columns, rows, error, just_cached ? Time.now : nil]), expires_in: 5.seconds)
+      end
+
+      [columns, rows, error, just_cached]
     end
 
     def adapter_name

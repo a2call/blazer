@@ -29,6 +29,11 @@ module Blazer
       end
 
       Blazer.cache ||= Rails.cache
+
+      Blazer.async = Blazer.settings["async"] || false
+      if Blazer.async
+        require "blazer/run_statement_job"
+      end
     end
   end
 end

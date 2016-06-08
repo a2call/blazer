@@ -68,102 +68,60 @@ module Blazer
       data_source = params[:data_source]
       process_vars(@statement, data_source)
       @only_chart = params[:only_chart]
+      @query = Query.find_by(id: params[:query_id]) if params[:query_id]
 
-      if @success
-        @query = Query.find_by(id: params[:query_id]) if params[:query_id]
+      if blazer_params[:run_id]
+        @run_id = blazer_params[:run_id]
+        @timestamp = blazer_params[:timestamp].to_i
+        @data_source = Blazer.data_sources[params[:data_source]]
 
+        @columns, @rows, @error, @cached_at = @data_source.run_results(@run_id)
+        @success = !@rows.nil?
+
+        if @success
+          @data_source.delete_results(@run_id)
+          @just_cached = !@error && @cached_at.present?
+          @cached_at = nil
+          params[:data_source] = nil
+          render_run
+        elsif Time.now > Time.at(@timestamp + (@data_source.timeout || 120).to_i)
+          # timed out
+          @error = Blazer::TIMEOUT_MESSAGE
+          @rows = []
+          @columns = []
+          render_run
+        else
+          continue_run
+        end
+      elsif @success
         data_source = @query.data_source if @query && @query.data_source
         @data_source = Blazer.data_sources[data_source]
-        Blazer.transform_statement.call(@data_source, @statement) if Blazer.transform_statement
 
-        # audit
-        if Blazer.audit
-          audit = Blazer::Audit.new(statement: @statement)
-          audit.query = @query
-          audit.data_source = data_source
-          audit.user = blazer_user
-          audit.save!
-        end
+        @run_id = Blazer.async ? SecureRandom.uuid : nil
 
-        start_time = Time.now
-        @columns, @rows, @error, @cached_at = @data_source.run_statement(@statement, user: blazer_user, query: @query, refresh_cache: params[:check])
-        duration = Time.now - start_time
-
-        if Blazer.audit
-          audit.duration = duration if audit.respond_to?(:duration=)
-          audit.error = @error if audit.respond_to?(:error=)
-          audit.timed_out = @error == Blazer::TIMEOUT_MESSAGE if audit.respond_to?(:timed_out=)
-          audit.cached = @cached_at.present? if audit.respond_to?(:cached=)
-          if !@error && !@cached_at && duration >= 10
-            audit.cost = @data_source.cost(@statement) if audit.respond_to?(:cost=)
+        options = {user: blazer_user, query: @query, refresh_cache: params[:check], run_id: @run_id}
+        result = []
+        if Blazer.async && request.format.symbol != :csv
+          Blazer::RunStatementJob.perform_async(result, @data_source, @statement, options)
+          wait_start = Time.now
+          loop do
+            sleep(0.02)
+            break if result.any? || Time.now - wait_start > 3
           end
-          audit.save! if audit.changed?
+        else
+          result = @data_source.run_main_statement(@statement, options)
         end
 
-        if @query && @error != Blazer::TIMEOUT_MESSAGE && !@error.to_s.include?("permission denied for relation")
-          @query.checks.each do |check|
-            check.update_state(@rows, @error)
-          end
+        if result.any?
+          @columns, @rows, @error, @cached_at, @just_cached = result
+          @data_source.delete_results(@run_id) if @run_id
+          render_run
+        else
+          @timestamp = Time.now.to_i
+          continue_run
         end
-
-        @first_row = @rows.first || []
-        @column_types = []
-        if @rows.any?
-          @columns.each_with_index do |column, i|
-            @column_types << (
-              case @first_row[i]
-              when Integer
-                "int"
-              when Float
-                "float"
-              else
-                "string-ins"
-              end
-            )
-          end
-        end
-
-        @filename = @query.name.parameterize if @query
-        @min_width_types = @columns.each_with_index.select { |c, i| @first_row[i].is_a?(Time) || @first_row[i].is_a?(String) || @data_source.smart_columns[c] }
-
-        @boom = {}
-        @columns.each_with_index do |key, i|
-          query = @data_source.smart_columns[key]
-          if query
-            values = @rows.map { |r| r[i] }.compact.uniq
-            columns, rows, error, cached_at = @data_source.run_statement(ActiveRecord::Base.send(:sanitize_sql_array, [query.sub("{value}", "(?)"), values]))
-            @boom[key] = Hash[rows.map { |k, v| [k.to_s, v] }]
-          end
-        end
-
-        @linked_columns = @data_source.linked_columns
-
-        @markers = []
-        [["latitude", "longitude"], ["lat", "lon"]].each do |keys|
-          lat_index = @columns.index(keys.first)
-          lon_index = @columns.index(keys.last)
-          if lat_index && lon_index
-            @markers =
-              @rows.select do |r|
-                r[lat_index] && r[lon_index]
-              end.map do |r|
-                {
-                  title: r.each_with_index.map{ |v, i| i == lat_index || i == lon_index ? nil : "<strong>#{@columns[i]}:</strong> #{v}" }.compact.join("<br />").truncate(140),
-                  latitude: r[lat_index],
-                  longitude: r[lon_index]
-                }
-              end
-          end
-        end
-      end
-
-      respond_to do |format|
-        format.html do
-          render layout: false
-        end
-        format.csv do
-          send_data csv_data(@columns, @rows), type: "text/csv; charset=utf-8; header=present", disposition: "attachment; filename=\"#{@query.try(:name).try(:parameterize).presence || 'query'}.csv\""
-        end
+      else
+        render layout: false
       end
     end
 
@@ -203,6 +161,71 @@ module Blazer
 
     private
 
+    def continue_run
+      render json: {run_id: @run_id, timestamp: @timestamp}, status: :accepted
+    end
+
+    def render_run
+      @first_row = @rows.first || []
+      @column_types = []
+      if @rows.any?
+        @columns.each_with_index do |column, i|
+          @column_types << (
+            case @first_row[i]
+            when Integer
+              "int"
+            when Float
+              "float"
+            else
+              "string-ins"
+            end
+          )
+        end
+      end
+
+      @filename = @query.name.parameterize if @query
+      @min_width_types = @columns.each_with_index.select { |c, i| @first_row[i].is_a?(Time) || @first_row[i].is_a?(String) || @data_source.smart_columns[c] }
+
+      @boom = {}
+      @columns.each_with_index do |key, i|
+        query = @data_source.smart_columns[key]
+        if query
+          values = @rows.map { |r| r[i] }.compact.uniq
+          columns, rows, error, cached_at = @data_source.run_statement(ActiveRecord::Base.send(:sanitize_sql_array, [query.sub("{value}", "(?)"), values]))
+          @boom[key] = Hash[rows.map { |k, v| [k.to_s, v] }]
+        end
+      end
+
+      @linked_columns = @data_source.linked_columns
+
+      @markers = []
+      [["latitude", "longitude"], ["lat", "lon"]].each do |keys|
+        lat_index = @columns.index(keys.first)
+        lon_index = @columns.index(keys.last)
+        if lat_index && lon_index
+          @markers =
+            @rows.select do |r|
+              r[lat_index] && r[lon_index]
+            end.map do |r|
+              {
+                title: r.each_with_index.map{ |v, i| i == lat_index || i == lon_index ? nil : "<strong>#{@columns[i]}:</strong> #{v}" }.compact.join("<br />").truncate(140),
+                latitude: r[lat_index],
+                longitude: r[lon_index]
+              }
+            end
+        end
+      end
+
+      respond_to do |format|
+        format.html do
+          render layout: false
+        end
+        format.csv do
+          send_data csv_data(@columns, @rows, @data_source), type: "text/csv; charset=utf-8; header=present", disposition: "attachment; filename=\"#{@query.try(:name).try(:parameterize).presence || 'query'}.csv\""
+        end
+      end
+    end
+
     def set_queries(limit = nil)
       @my_queries =
         if limit && blazer_user
@@ -240,18 +263,21 @@ module Blazer
       params.require(:query).permit(:name, :description, :statement, :data_source)
     end
 
-    def csv_data(columns, rows)
+    def blazer_params
+      params[:blazer] || {}
+    end
+
+    def csv_data(columns, rows, data_source)
       CSV.generate do |csv|
         csv << columns
         rows.each do |row|
-          csv << row.each_with_index.map { |v, i| v.is_a?(Time) ? blazer_time_value(columns[i], v) : v }
+          csv << row.each_with_index.map { |v, i| v.is_a?(Time) ? blazer_time_value(data_source, columns[i], v) : v }
         end
       end
     end
 
-    def blazer_time_value(k, v)
-      # yuck, instance var
-      @data_source.local_time_suffix.any? { |s| k.ends_with?(s) } ? v.to_s.sub(" UTC", "") : v.in_time_zone(Blazer.time_zone)
+    def blazer_time_value(data_source, k, v)
+      data_source.local_time_suffix.any? { |s| k.ends_with?(s) } ? v.to_s.sub(" UTC", "") : v.in_time_zone(Blazer.time_zone)
     end
     helper_method :blazer_time_value
   end

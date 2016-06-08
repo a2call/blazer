@@ -20,16 +20,20 @@ module Blazer
     attr_accessor :cache
     attr_accessor :transform_statement
     attr_accessor :check_schedules
+    attr_accessor :async
   end
   self.audit = true
   self.user_name = :name
   self.check_schedules = ["5 minutes", "1 hour", "1 day"]
+  self.async = false
 
   TIMEOUT_MESSAGE = "Query timed out :("
   TIMEOUT_ERRORS = [
     "canceling statement due to statement timeout", # postgres
     "cancelled on user's request", # redshift
-    "system requested abort" # redshift
+    "canceled on user's request", # redshift
+    "system requested abort", # redshift
+    "maximum statement execution time exceeded" # mysql
   ]
   BELONGS_TO_OPTIONAL = {}
   BELONGS_TO_OPTIONAL[:optional] = true if Rails::VERSION::MAJOR >= 5
@@ -71,7 +75,10 @@ module Blazer
       ActiveSupport::Notifications.instrument("run_check.blazer", check_id: check.id, query_id: check.query.id, state_was: check.state) do |instrument|
         # try 3 times on timeout errors
         while tries <= 3
-          columns, rows, error, cached_at = data_sources[check.query.data_source].run_statement(check.query.statement, refresh_cache: true)
+          data_source = data_sources[check.query.data_source]
+          statement = check.query.statement
+          Blazer.transform_statement.call(data_source, statement) if Blazer.transform_statement
+          columns, rows, error, cached_at = data_source.run_statement(statement, refresh_cache: true)
           if error == Blazer::TIMEOUT_MESSAGE
             Rails.logger.info "[blazer timeout] query=#{check.query.name}"
             tries += 1

@@ -8,12 +8,15 @@
   <% end %>
 <% else %>
   <% unless @only_chart %>
-    <% if @cached_at || @data_source.cache %>
+    <% if @cached_at || @just_cached %>
       <p class="text-muted" style="float: right;">
         <% if @cached_at %>
           Cached <%= time_ago_in_words(@cached_at, include_seconds: true) %> ago
         <% elsif !params[:data_source] %>
           Cached just now
+          <% if @data_source.cache_mode == "slow" %>
+            (over <%= "%g" % @data_source.cache_slow_threshold %>s)
+          <% end %>
         <% end %>
 
         <% if @query && !params[:data_source] %>
@@ -70,7 +73,12 @@
       <%= column_chart (values.size - 1).times.map { |i| name = @columns[i + 1]; {name: name, data: @rows.first(20).map { |r| [(@boom[@columns[0]] || {})[r[0].to_s] || r[0], r[i + 1]] } } }, id: chart_id %>
     <% elsif @only_chart %>
       <% if @rows.size == 1 && @rows.first.size == 1 %>
-        <p style="font-size: 160px;"><%= blazer_format_value(@columns.first, @rows.first.first) %></p>
+        <% v = @rows.first.first %>
+        <% if v.is_a?(String) && v == "" %>
+          <div class="text-muted">empty string</div>
+        <% else %>
+          <p style="font-size: 160px;"><%= blazer_format_value(@columns.first, v) %></p>
+        <% end %>
       <% else %>
         <% @no_chart = true %>
       <% end %>
@@ -102,7 +110,7 @@
                     <% k = @columns[i] %>
                     <td>
                       <% if v.is_a?(Time) %>
-                        <% v = blazer_time_value(k, v) %>
+                        <% v = blazer_time_value(@data_source, k, v) %>
                       <% end %>
 
                       <% unless v.nil? %>
