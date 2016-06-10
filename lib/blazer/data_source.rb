@@ -118,8 +118,11 @@ module Blazer
         audit.error = error if audit.respond_to?(:error=)
         audit.timed_out = error == Blazer::TIMEOUT_MESSAGE if audit.respond_to?(:timed_out=)
         audit.cached = cached_at.present? if audit.respond_to?(:cached=)
-        if !cached_at && duration >= 10
+        if !cached_at
+          cost_start_time = Time.now
           audit.cost = cost(statement) if audit.respond_to?(:cost=)
+          cost_duration = Time.now - cost_start_time
+          Rails.logger.info "[blazer cost duration] #{id} #{(cost_duration.to_f * 1000).round}ms"
         end
         audit.save! if audit.changed?
       end
@@ -261,7 +264,13 @@ module Blazer
       cache_data = nil
       cache = !error && (cache_mode == "all" || (cache_mode == "slow" && duration >= cache_slow_threshold))
       if cache || run_id
-        cache_data = Marshal.dump([columns, rows, error, cache ? Time.now : nil]) rescue nil
+        cache_data =
+          begin
+            Marshal.dump([columns, rows, error, cache ? Time.now : nil])
+          rescue => e
+            Rails.logger.info "[blazer serialize error] #{e.class.name} #{e.message} #{run_id}"
+            nil
+          end
       end
 
       if cache && cache_data
