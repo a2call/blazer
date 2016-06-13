@@ -108,7 +108,7 @@ module Blazer
         end
       end
 
-      check.update_state(rows, error)
+      check.update_state(columns, rows, error)
 
       # TODO use proper logfmt
       Rails.logger.info "[blazer check] query=#{check.query.name} state=#{check.state} rows=#{rows.try(:size)} error=#{error}"
