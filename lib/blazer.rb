@@ -22,11 +22,13 @@ module Blazer
     attr_accessor :transform_statement
     attr_accessor :check_schedules
     attr_accessor :async
+    attr_accessor :anomaly_checks
   end
   self.audit = true
   self.user_name = :name
   self.check_schedules = ["5 minutes", "1 hour", "1 day"]
   self.async = false
+  self.anomaly_checks = false
 
   TIMEOUT_MESSAGE = "Query timed out :("
   TIMEOUT_ERRORS = [
@@ -107,6 +109,7 @@ module Blazer
       end
 
       check.update_state(rows, error)
+
       # TODO use proper logfmt
       Rails.logger.info "[blazer check] query=#{check.query.name} state=#{check.state} rows=#{rows.try(:size)} error=#{error}"
 
@@ -130,5 +133,97 @@ module Blazer
     emails.each do |email, checks|
       Blazer::CheckMailer.failing_checks(email, checks).deliver_later
     end
+  end
+
+  def self.column_types(columns, rows, boom = {})
+    columns.each_with_index.map do |k, i|
+      v = (rows.find { |r| r[i] } || {})[i]
+      if boom[k]
+        "string"
+      elsif v.is_a?(Numeric)
+        "numeric"
+      elsif v.is_a?(Time) || v.is_a?(Date)
+        "time"
+      elsif v.nil?
+        nil
+      else
+        "string"
+      end
+    end
+  end
+
+  def self.chart_type(column_types)
+    if column_types.compact.size >= 2 && column_types.compact == ["time"] + (column_types.compact.size - 1).times.map { "numeric" }
+      "line"
+    elsif column_types == ["time", "string", "numeric"]
+      "line2"
+    elsif column_types.compact.size >= 2 && column_types == ["string"] + (column_types.compact.size - 1).times.map { "numeric" }
+      "bar"
+    end
+  end
+
+  def self.detect_anomaly(columns, rows)
+    anomaly = false
+    error = nil
+
+    if rows.empty?
+      error = "No data"
+    else
+      chart_type = self.chart_type(column_types(columns, rows))
+      if chart_type == "line" || chart_type == "line2"
+        series = []
+
+        if chart_type == "line"
+          columns[1..-1].each_with_index.each do |k, i|
+            series << {name: k, data: rows.map{ |r| [r[0], r[i + 1]] }}
+          end
+        else
+          rows.group_by { |r| r[1] }.each_with_index.map do |(name, v), i|
+            series << {name: name, data: v.map { |v2| [v2[0], v2[2]] }}
+          end
+        end
+
+        series.each do |s|
+          begin
+            if anomaly?(s[:data])
+              anomaly = true
+            end
+          rescue => e
+            error = e.message
+          end
+        end
+      else
+        error = "Bad format"
+      end
+    end
+
+    [anomaly, error]
+  end
+
+  def self.anomaly?(series)
+    series = series.reject { |v| v[0].nil? }.sort_by { |v| v[0] }
+
+    csv_str =
+      CSV.generate do |csv|
+        csv << ["timestamp", "count"]
+        series.each do |row|
+          csv << row
+        end
+      end
+
+    timestamps = []
+    output = %x[Rscript #{File.expand_path("../blazer/detect_anomalies.R", __FILE__)} #{Shellwords.escape(csv_str)}]
+    if output.empty?
+      raise "Unknown R error"
+    end
+
+    rows = CSV.parse(output, headers: true)
+    error = rows.first && rows.first["x"]
+    raise error if error
+
+    rows.each do |row|
+      timestamps << Time.parse(row["timestamp"])
+    end
+    timestamps.include?(series.last[0].to_time)
   end
 end
