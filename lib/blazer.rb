@@ -89,13 +89,13 @@ module Blazer
       Blazer.transform_statement.call(data_source, statement) if Blazer.transform_statement
 
       while tries <= 3
-        columns, rows, error, cached_at = data_source.run_statement(statement, refresh_cache: true)
+        columns, rows, error, cached_at = data_source.run_statement(statement, refresh_cache: true, check: check, query: check.query)
         if error == Blazer::TIMEOUT_MESSAGE
           Rails.logger.info "[blazer timeout] query=#{check.query.name}"
           tries += 1
           sleep(10)
         elsif error.to_s.start_with?("PG::ConnectionBad")
-          data_sources[check.query.data_source].reconnect
+          data_source.reconnect
           Rails.logger.info "[blazer reconnect] query=#{check.query.name}"
           tries += 1
           sleep(10)
@@ -108,7 +108,7 @@ module Blazer
         end
       end
 
-      check.update_state(columns, rows, error)
+      check.update_state(columns, rows, error, data_source)
 
       # TODO use proper logfmt
       Rails.logger.info "[blazer check] query=#{check.query.name} state=#{check.state} rows=#{rows.try(:size)} error=#{error}"
@@ -162,14 +162,15 @@ module Blazer
     end
   end
 
-  def self.detect_anomaly(columns, rows)
-    anomaly = false
-    error = nil
+  def self.detect_anomaly(columns, rows, data_source)
+    anomaly = nil
+    message = nil
 
     if rows.empty?
-      error = "No data"
+      message = "No data"
     else
-      chart_type = self.chart_type(column_types(columns, rows))
+      boom = self.boom(columns, rows, data_source)
+      chart_type = self.chart_type(column_types(columns, rows, boom))
       if chart_type == "line" || chart_type == "line2"
         series = []
 
@@ -178,26 +179,37 @@ module Blazer
             series << {name: k, data: rows.map{ |r| [r[0], r[i + 1]] }}
           end
         else
-          rows.group_by { |r| r[1] }.each_with_index.map do |(name, v), i|
+          rows.group_by { |r| v = r[1]; (boom[columns[1]] || {})[v.to_s] || v }.each_with_index.map do |(name, v), i|
             series << {name: name, data: v.map { |v2| [v2[0], v2[2]] }}
           end
         end
 
-        series.each do |s|
-          begin
-            if anomaly?(s[:data])
-              anomaly = true
-            end
-          rescue => e
-            error = e.message
+        current_series = nil
+        begin
+          anomalies = []
+          series.each do |s|
+            current_series = s[:name]
+            anomalies << s[:name] if anomaly?(s[:data])
           end
+          anomaly = anomalies.any?
+          if anomaly
+            if anomalies.size == 1
+              message = "Anomaly detected in #{anomalies.first}"
+            else
+              message = "Anomalies detected in #{anomalies.to_sentence}"
+            end
+          else
+            message = "No anomalies detected"
+          end
+        rescue => e
+          message = "#{current_series}: #{e.message}"
         end
       else
-        error = "Bad format"
+        message = "Bad format"
       end
     end
 
-    [anomaly, error]
+    [anomaly, message]
   end
 
   def self.anomaly?(series)
@@ -225,5 +237,18 @@ module Blazer
       timestamps << Time.parse(row["timestamp"])
     end
     timestamps.include?(series.last[0].to_time)
+  end
+
+  def self.boom(columns, rows, data_source)
+    boom = {}
+    columns.each_with_index do |key, i|
+      query = data_source.smart_columns[key]
+      if query
+        values = rows.map { |r| r[i] }.compact.uniq
+        columns, rows2, error, cached_at = data_source.run_statement(ActiveRecord::Base.send(:sanitize_sql_array, [query.sub("{value}", "(?)"), values]))
+        boom[key] = Hash[rows2.map { |k, v| [k.to_s, v] }]
+      end
+    end
+    boom
   end
 end

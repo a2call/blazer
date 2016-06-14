@@ -129,7 +129,7 @@ module Blazer
 
       if query && error != Blazer::TIMEOUT_MESSAGE && !error.to_s.include?("permission denied for relation")
         query.checks.each do |check|
-          check.update_state(columns, rows, error)
+          check.update_state(columns, rows, error, self)
         end
       end
 
@@ -172,6 +172,9 @@ module Blazer
         end
         if options[:query].respond_to?(:id)
           comment << ",query_id:#{options[:query].id}"
+        end
+        if options[:check]
+          comment << ",check_id:#{options[:check].id},check_emails:#{options[:check].emails}"
         end
         columns, rows, error, just_cached = run_statement_helper(statement, comment, options[:run_id])
       end
