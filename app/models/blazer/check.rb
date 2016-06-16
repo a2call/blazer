@@ -1,5 +1,6 @@
 module Blazer
   class Check < ActiveRecord::Base
+    belongs_to :creator, Blazer::BELONGS_TO_OPTIONAL.merge(class_name: Blazer.user_class.to_s) if Blazer.user_class
     belongs_to :query
 
     validates :query_id, presence: true
@@ -60,8 +61,9 @@ module Blazer
         end
       end
 
-      if notify?
-        Blazer::CheckMailer.state_change(self, state, state_was, rows.size, error).deliver_later
+      # do not notify on creation, except when not passing
+      if (state_was || state != "passing") && state != state_was && emails.present?
+        Blazer::CheckMailer.state_change(self, state, state_was, rows.size, message).deliver_later
       end
       save! if changed?
     end
