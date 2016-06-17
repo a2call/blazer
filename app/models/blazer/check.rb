@@ -77,16 +77,18 @@ module Blazer
         # Do not notify if the state has not changed
         send_it &&= (state != state_was)
 
+        error_states = ["error", "timed out"]
+
         # Do not notify on creation, except when not passing
         send_it &&= (state_was || state != "passing")
 
         if self.respond_to?(:notify_on_error)
           # Do not notify on error when notify_on_error is false
-          send_it &&= (state != "error" || notify_on_error)
+          send_it &&= (!state.in?(error_states) || notify_on_error)
 
           # Do not send on passing when notify_on_pass is false, or when notify_on_pass is true but
           # the previous state was 'error' and notify_on_error is false.
-          send_it &&= (state != "passing" || (notify_on_pass && (state_was != "error" || notify_on_error)))
+          send_it &&= (state != "passing" || (notify_on_pass && (!state_was.in?(error_states) || notify_on_error)))
         end
 
         send_it
