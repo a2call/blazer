@@ -23,7 +23,7 @@ module Blazer
     end
 
     def blazer_image?(key, value)
-      key.to_s.end_with?("image") && value.is_a?(String) && %w[png jpg jpeg gif].include?(value.split(".").last.split("?").first)
+      key.to_s.end_with?("image") && value.is_a?(String) && %w[png jpg jpeg gif].include?(value.split(".").last.split("?").first.try(:downcase))
     end
 
     JSON_ESCAPE = { '&' => '\u0026', '>' => '\u003e', '<' => '\u003c', "\u2028" => '\u2028', "\u2029" => '\u2029' }
