@@ -15,7 +15,7 @@ module Blazer
           data_source.connection_model.connection_pool.with_connection do
             pool_time = Time.now - started_at
             Rails.logger.info "[blazer pool time] #{(pool_time.to_f * 1000).round}ms"
-            result.concat(data_source.run_main_statement(statement, options))
+            result << data_source.run_main_statement(statement, options)
           end
         end
         Rails.logger.info "[blazer job done] #{run_id}"

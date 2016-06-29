@@ -54,9 +54,9 @@ module Blazer
       @bind_vars.each do |var|
         query = data_source.smart_variables[var]
         if query
-          columns, rows, error, cached_at = data_source.run_statement(query)
-          @smart_vars[var] = rows.map { |v| v.reverse }
-          @sql_errors << error if error
+          result = data_source.run_statement(query)
+          @smart_vars[var] = result.rows.map { |v| v.reverse }
+          @sql_errors << result.error if result.error
         end
       end
 
@@ -79,12 +79,15 @@ module Blazer
       if @run_id
         @timestamp = blazer_params[:timestamp].to_i
 
-        @columns, @rows, @error, @cached_at = @data_source.run_results(@run_id)
-        @success = !@rows.nil?
+        @result = @data_source.run_results(@run_id)
+        @success = !@result.nil?
 
         if @success
           @data_source.delete_results(@run_id)
-          @just_cached = !@error && @cached_at.present?
+          @columns = @result.columns
+          @rows = @result.rows
+          @error = @result.error
+          @just_cached = !@result.error && @result.cached_at.present?
           @cached_at = nil
           params[:data_source] = nil
           render_run
@@ -102,22 +105,29 @@ module Blazer
         @run_id = Blazer.async ? SecureRandom.uuid : nil
 
         options = {user: blazer_user, query: @query, refresh_cache: params[:check], run_id: @run_id}
-        result = []
         if Blazer.async && request.format.symbol != :csv
           Rails.logger.info "[blazer run start] #{@run_id}"
+          result = []
           Blazer::RunStatementJob.perform_async(result, @data_source, @statement, options, Time.now)
           wait_start = Time.now
           loop do
             sleep(0.02)
             break if result.any? || Time.now - wait_start > 3
           end
+          @result = result.first
         else
-          result = @data_source.run_main_statement(@statement, options)
+          @result = @data_source.run_main_statement(@statement, options)
         end
 
-        if result.any?
-          @columns, @rows, @error, @cached_at, @just_cached = result
+        if @result
           @data_source.delete_results(@run_id) if @run_id
+
+          @columns = @result.columns
+          @rows = @result.rows
+          @error = @result.error
+          @cached_at = @result.cached_at
+          @just_cached = @result.just_cached
+
           render_run
         else
           @timestamp = Time.now.to_i
@@ -189,9 +199,9 @@ module Blazer
       end
 
       @filename = @query.name.parameterize if @query
-      @min_width_types = @columns.each_with_index.select { |c, i| @first_row[i].is_a?(Time) || @first_row[i].is_a?(String) || @data_source.smart_columns[c] }
+      @min_width_types = @columns.each_with_index.select { |c, i| @first_row[i].is_a?(Time) || @first_row[i].is_a?(String) || @data_source.smart_columns[c] }.map(&:last)
 
-      @boom = Blazer.boom(@columns, @rows, @data_source)
+      @boom = @result.boom
 
       @linked_columns = @data_source.linked_columns
 

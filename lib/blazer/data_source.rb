@@ -110,16 +110,15 @@ module Blazer
       end
 
       start_time = Time.now
-      columns, rows, error, cached_at, just_cached = run_statement(statement, options.merge(with_just_cached: true))
+      result = run_statement(statement, options.merge(with_just_cached: true))
       duration = Time.now - start_time
 
       if Blazer.audit
         audit.duration = duration if audit.respond_to?(:duration=)
-        audit.error = error if audit.respond_to?(:error=)
-        audit.timed_out = error == Blazer::TIMEOUT_MESSAGE if audit.respond_to?(:timed_out=)
-        audit.cached = cached_at.present? if audit.respond_to?(:cached=)
-        if !cached_at
-          cost_start_time = Time.now
+        audit.error = result.error if audit.respond_to?(:error=)
+        audit.timed_out = result.timed_out? if audit.respond_to?(:timed_out=)
+        audit.cached = result.cached? if audit.respond_to?(:cached=)
+        if !result.cached?
           audit.cost = cost(statement) if audit.respond_to?(:cost=)
           cost_duration = Time.now - cost_start_time
           Rails.logger.info "[blazer cost duration] #{id} #{(cost_duration.to_f * 1000).round}ms"
@@ -127,18 +126,20 @@ module Blazer
         audit.save! if audit.changed?
       end
 
-      if query && error != Blazer::TIMEOUT_MESSAGE && !error.to_s.include?("permission denied for relation")
+      if query && !result.timed_out? && !result.error.to_s.include?("permission denied for relation")
         query.checks.each do |check|
-          check.update_state(columns, rows, error, self)
+          check.update_state(result)
         end
       end
 
-      [columns, rows, error, cached_at, just_cached]
+      result
     end
 
     def read_cache(cache_key)
       value = Blazer.cache.read(cache_key)
-      Marshal.load(value) if value
+      if value
+        Blazer::Result.new(self, *Marshal.load(value), nil)
+      end
     end
 
     def run_results(run_id)
@@ -150,18 +151,13 @@ module Blazer
     end
 
     def run_statement(statement, options = {})
-      columns = nil
-      rows = nil
-      error = nil
-      cached_at = nil
-      just_cached = false
       run_id = options[:run_id]
-      cache_key = statement_cache_key(statement) if cache_mode != "off"
+      result = nil
       if cache_mode != "off" && !options[:refresh_cache]
-        columns, rows, error, cached_at = read_cache(cache_key)
+        result = read_cache(statement_cache_key(statement))
       end
 
-      unless rows
+      unless result
         comment = "blazer"
         if options[:user].respond_to?(:id)
           comment << ",user_id:#{options[:user].id}"
@@ -176,12 +172,10 @@ module Blazer
         if options[:check]
           comment << ",check_id:#{options[:check].id},check_emails:#{options[:check].emails}"
         end
-        columns, rows, error, just_cached = run_statement_helper(statement, comment, options[:run_id])
+        result = run_statement_helper(statement, comment, options[:run_id])
       end
 
-      output = [columns, rows, error, cached_at]
-      output << just_cached if options[:with_just_cached]
-      output
+      result
     end
 
     def clear_cache(statement)
@@ -206,8 +200,8 @@ module Blazer
     end
 
     def tables
-      columns, rows, error, cached_at = run_statement(connection_model.send(:sanitize_sql_array, ["SELECT table_name FROM information_schema.tables WHERE table_schema IN (?) ORDER BY table_name", schemas]))
-      rows.map(&:first)
+      result = run_statement(connection_model.send(:sanitize_sql_array, ["SELECT table_name FROM information_schema.tables WHERE table_schema IN (?) ORDER BY table_name", schemas]))
+      result.rows.map(&:first)
     end
 
     def postgresql?
@@ -288,7 +282,7 @@ module Blazer
         Blazer.cache.write(run_cache_key(run_id), cache_data, expires_in: 30.seconds)
       end
 
-      [columns, rows, error, cache && !cache_data.nil?]
+      Blazer::Result.new(self, columns, rows, error, nil, cache && !cache_data.nil?)
     end
 
     def adapter_name

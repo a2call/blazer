@@ -1,6 +1,8 @@
 ## 1.4.1 [unreleased]
 
 - Added new bar chart format
+- Added anomaly detection checks
+- Added `async` option for polling
 
 ## 1.4.0
 
