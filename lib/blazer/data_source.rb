@@ -119,6 +119,7 @@ module Blazer
         audit.timed_out = result.timed_out? if audit.respond_to?(:timed_out=)
         audit.cached = result.cached? if audit.respond_to?(:cached=)
         if !result.cached?
+          cost_start_time = Time.now
           audit.cost = cost(statement) if audit.respond_to?(:cost=)
           cost_duration = Time.now - cost_start_time
           Rails.logger.info "[blazer cost duration] #{id} #{(cost_duration.to_f * 1000).round}ms"
