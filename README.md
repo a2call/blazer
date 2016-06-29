@@ -254,10 +254,18 @@ SELECT date_trunc('week', created_at), gender, COUNT(*) FROM users GROUP BY 1, 2
 
 ### Column Chart
 
+There are also two ways to generate column charts.
+
 2+ columns - string, numeric(s) - [Example](https://blazerme.herokuapp.com/queries/2-top-genres)
 
 ```sql
 SELECT gender, COUNT(*) FROM users GROUP BY 1
+```
+
+3 columns - string, string, numeric [master]
+
+```sql
+SELECT gender, zip_code, COUNT(*) FROM users GROUP BY 1, 2
 ```
 
 ### Maps
@@ -269,6 +277,14 @@ SELECT name, latitude, longitude FROM cities
 ```
 
 To enable, get an access token from [Mapbox](https://www.mapbox.com/) and set `ENV["MAPBOX_ACCESS_TOKEN"]`.
+
+### Targets
+
+Use the column name `target` to draw a line for goals.
+
+```sql
+SELECT date_trunc('week', created_at), COUNT(*) AS new_users, 100000 AS target FROM users GROUP BY 1
+```
 
 ## Dashboards
 

@@ -156,8 +156,8 @@ module Blazer
       cached_at = nil
       just_cached = false
       run_id = options[:run_id]
-      cache_key = statement_cache_key(statement)
-      if cache && !options[:refresh_cache]
+      cache_key = statement_cache_key(statement) if cache_mode != "off"
+      if cache_mode != "off" && !options[:refresh_cache]
         columns, rows, error, cached_at = read_cache(cache_key)
       end
 
