@@ -23,7 +23,7 @@ module Blazer
         Rails.logger.info "[blazer async error] #{e.class.name} #{e.message}"
         result.clear
         result << Blazer::Result.new(data_source, [], [], "Unknown error", nil, false)
-        Blazer.cache.write(data_source.run_cache_key(options[:run_id]), Marshal.dump(result), expires_in: 30.seconds)
+        Blazer.cache.write(data_source.run_cache_key(options[:run_id]), Marshal.dump([[], [], "Unknown error", nil]), expires_in: 30.seconds)
         raise e
       end
     end
