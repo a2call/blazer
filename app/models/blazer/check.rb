@@ -78,7 +78,7 @@ module Blazer
         error_states = ["error", "timed out"]
 
         # Do not notify on creation, except when not passing
-        send_it &&= (state_was || state != "passing")
+        send_it &&= (state_was != "new" || state != "passing")
 
         if self.respond_to?(:notify_on_error)
           # Do not notify on error when notify_on_error is false

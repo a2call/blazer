@@ -103,8 +103,20 @@
 
   function getSQL() {
     var selectedText = editor.getSelectedText();
-    var text = selectedText.length == 0 ? editor.getValue() : selectedText;
+    var text = selectedText.length < 10 ? editor.getValue() : selectedText;
     return text.replace(/\n/g, "\r\n");
+  }
+
+  function getErrorLine() {
+    var error_line = /LINE (\d+)/g.exec($("#results").find('.alert-danger').text());
+
+    if (error_line) {
+      error_line = parseInt(error_line[1], 10);
+      if (editor.getSelectedText().length >= 10) {
+        error_line += editor.getSelectionRange().start.row;
+      }
+      return error_line;
+    }
   }
 
   editor.getSession().on("change", adjustHeight);
@@ -134,10 +146,8 @@
     xhr = runQuery(data, function (data) {
       $("#results").html(data);
 
-      error_line = /LINE (\d+)/g.exec($("#results").find('.alert-danger').text());
-
+      error_line = getErrorLine();
       if (error_line) {
-        error_line = parseInt(error_line[1], 10);
         editor.getSession().addGutterDecoration(error_line - 1, "error");
         editor.scrollToLine(error_line, true, true, function () {});
         editor.gotoLine(error_line, 0, true);

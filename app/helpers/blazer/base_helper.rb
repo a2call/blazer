@@ -10,9 +10,21 @@ module Blazer
       end
     end
 
+    BLAZER_URL_REGEX = /\Ahttps?:\/\/[\S]+\z/
+    BLAZER_IMAGE_EXT = %w[png jpg jpeg gif]
+
     def blazer_format_value(key, value)
       if value.is_a?(Integer) && !key.to_s.end_with?("id")
         number_with_delimiter(value)
+      elsif value =~ BLAZER_URL_REGEX
+        # see if image or link
+        if Blazer.images && (key.include?("image") || BLAZER_IMAGE_EXT.include?(value.split(".").last.split("?").first.try(:downcase)))
+          link_to value, target: "_blank" do
+            image_tag value, referrerpolicy: "no-referrer"
+          end
+        else
+          link_to value, value, target: "_blank"
+        end
       else
         ActionController::Base.helpers.auto_link(value.to_s, link: :urls, html: { target: '_blank' })
       end
