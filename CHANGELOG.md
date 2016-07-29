@@ -1,5 +1,7 @@
-## 1.5.2 [unreleased]
+## 1.6.0
 
+- Added support for MongoDB [beta]
+- Added support for Elasticsearch [beta]
 - Fixed deprecation warning in Rails 5
 
 ## 1.5.1

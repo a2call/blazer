@@ -1,10 +1,10 @@
 module Blazer
   module Adapters
-    class ActiveRecordAdapter
-      attr_reader :data_source, :connection_model
+    class SqlAdapter < BaseAdapter
+      attr_reader :connection_model
 
       def initialize(data_source)
-        @data_source = data_source
+        super
 
         @connection_model =
           Class.new(Blazer::Connection) do
@@ -44,9 +44,8 @@ module Blazer
         result.rows.map(&:first)
       end
 
-      def schemas
-        default_schema = (postgresql? || redshift?) ? "public" : connection_model.connection_config[:database]
-        settings["schemas"] || [connection_model.connection_config[:schema] || default_schema]
+      def preview_statement
+        "SELECT * FROM {table} LIMIT 10"
       end
 
       def reconnect
@@ -67,7 +66,7 @@ module Blazer
         nil
       end
 
-      private
+      protected
 
       def postgresql?
         ["PostgreSQL", "PostGIS"].include?(adapter_name)
@@ -85,6 +84,11 @@ module Blazer
         connection_model.connection.adapter_name
       end
 
+      def schemas
+        default_schema = (postgresql? || redshift?) ? "public" : connection_model.connection_config[:database]
+        settings["schemas"] || [connection_model.connection_config[:schema] || default_schema]
+      end
+
       def set_timeout(timeout)
         if postgresql? || redshift?
           connection_model.connection.execute("SET statement_timeout = #{timeout.to_i * 1000}")
@@ -100,18 +104,16 @@ module Blazer
       end
 
       def in_transaction
-        if use_transaction?
-          connection_model.transaction do
+        connection_model.connection_pool.with_connection do
+          if use_transaction?
+            connection_model.transaction do
+              yield
+              raise ActiveRecord::Rollback
+            end
+          else
             yield
-            raise ActiveRecord::Rollback
           end
-        else
-          yield
         end
-      end
-
-      def settings
-        @data_source.settings
       end
     end
   end

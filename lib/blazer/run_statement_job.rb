@@ -12,11 +12,9 @@ module Blazer
       Rails.logger.info "[blazer queue time] #{run_id} #{(queue_time.to_f * 1000).round}ms"
       begin
         ActiveRecord::Base.connection_pool.with_connection do
-          data_source.adapter.connection_model.connection_pool.with_connection do
-            pool_time = Time.now - started_at
-            Rails.logger.info "[blazer pool time] #{(pool_time.to_f * 1000).round}ms"
-            result << RunStatement.new.perform(data_source, statement, options)
-          end
+          pool_time = Time.now - started_at
+          Rails.logger.info "[blazer pool time] #{(pool_time.to_f * 1000).round}ms"
+          result << RunStatement.new.perform(data_source, statement, options)
         end
         Rails.logger.info "[blazer job done] #{run_id}"
       rescue Exception => e
