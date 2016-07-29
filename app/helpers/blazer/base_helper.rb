@@ -20,7 +20,7 @@ module Blazer
         # see if image or link
         if Blazer.images && (key.include?("image") || BLAZER_IMAGE_EXT.include?(value.split(".").last.split("?").first.try(:downcase)))
           link_to value, target: "_blank" do
-            image_tag value, referrerpolicy: "no-referrer"
+            image_tag value, referrerpolicy: "no-referrer", style: "max-width: 200px; max-height: 200px;"
           end
         else
           link_to value, value, target: "_blank"
