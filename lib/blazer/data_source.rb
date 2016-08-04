@@ -18,12 +18,14 @@ module Blazer
 
       @adapter_instance =
         case adapter
-        when "sql"
-          Blazer::Adapters::SqlAdapter.new(self)
         when "elasticsearch"
           Blazer::Adapters::ElasticsearchAdapter.new(self)
         when "mongodb"
           Blazer::Adapters::MongodbAdapter.new(self)
+        when "presto"
+          Blazer::Adapters::PrestoAdapter.new(self)
+        when "sql"
+          Blazer::Adapters::SqlAdapter.new(self)
         else
           raise Blazer::Error, "Unknown adapter"
         end
@@ -168,7 +170,7 @@ module Blazer
           end
       end
 
-      if cache && cache_data
+      if cache && cache_data && @adapter_instance.cachable?(statement)
         Blazer.cache.write(statement_cache_key(statement), cache_data, expires_in: cache_expires_in.to_f * 60)
       end
 
@@ -184,8 +186,10 @@ module Blazer
     end
 
     def detect_adapter
-      if settings["url"].to_s.start_with?("mongodb://")
-        "mongodb"
+      schema = settings["url"].to_s.split("://").first
+      case schema
+      when "mongodb", "presto"
+        schema
       else
         "sql"
       end

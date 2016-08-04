@@ -111,6 +111,16 @@ GRANT SELECT, SHOW VIEW ON database_name.* TO blazer@’127.0.0.1′ IDENTIFIED 
 FLUSH PRIVILEGES;
 ```
 
+### MongoDB
+
+Create a user with read only permissions:
+
+```
+db.createUser({user: "blazer", pwd: "password", roles: ["read"]})
+```
+
+Also, make sure authorization is enabled when you start the server.
+
 ### Sensitive Data
 
 To protect sensitive info like password hashes and access tokens, use views. Documentation coming soon.
@@ -270,7 +280,7 @@ SELECT gender, zip_code, COUNT(*) FROM users GROUP BY 1, 2
 
 ### Maps
 
-Columns named `latitude` and `longitude` or `lat` and `lon` - [Example](https://blazerme.herokuapp.com/queries/15-map)
+Columns named `latitude` and `longitude` or `lat` and `lon` or `lat` and `lng` - [Example](https://blazerme.herokuapp.com/queries/15-map)
 
 ```sql
 SELECT name, latitude, longitude FROM cities
@@ -357,6 +367,7 @@ data_sources:
 - [Redshift](#redshift)
 - [MongoDB](#mongodb) [beta]
 - [Elasticsearch](#elasticsearch) [beta]
+- [Presto](#presto) [beta]
 
 You can also create an adapter for any other data store.
 
@@ -397,6 +408,16 @@ data_sources:
   my_source:
     adapter: elasticsearch
     url: http://user:password@hostname:9200/
+```
+
+### Presto
+
+Add [presto-client](https://github.com/treasure-data/presto-client-ruby) to your Gemfile and set:
+
+```yml
+data_sources:
+  my_source:
+    url: presto://user@hostname:8080/catalog
 ```
 
 ## Learn SQL
